@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>2D Dodge & Jump</title>
+  <style>
+    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    body {
+      margin: 0;
+      background: #141826;
+      color: #f5f5f5;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      touch-action: manipulation;
+    }
+    canvas {
+      background: #1c2236;
+      border: 2px solid #2e3856;
+      border-radius: 12px;
+      max-width: 96vw;
+      max-height: 68vh;
+      display: block;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 12px;
+      width: 96vw;
+      max-width: 480px;
+      justify-content: space-between;
+    }
+    button.ctrl-btn {
+      flex: 1;
+      padding: 16px 0;
+      font-size: 20px;
+      font-weight: 700;
+      border: none;
+      border-radius: 12px;
+      background: #2b3552;
+      color: #fff;
+      cursor: pointer;
+    }
+    button.ctrl-btn:active { background: #00d28c; color: #101520; }
+    button.jump-btn { background: #264d73; }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="480" height="640"></canvas>
+
+  <div class="controls">
+    <button class="ctrl-btn" id="btnLeft">←</button>
+    <button class="ctrl-btn" id="btnRight">→</button>
+    <button class="ctrl-btn jump-btn" id="btnJump">SAKRASH</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+    const GROUND_Y = HEIGHT - 80;
+
+    const player = {
+      w: 44, h: 44,
+      x: WIDTH / 2 - 22,
+      y: GROUND_Y - 44,
+      vx: 0, vy: 0,
+      speed: 5.5,
+      jumpForce: -13.5,
+      gravity: 0.72,
+      onGround: true
+    };
+
+    const input = { left: false, right: false, jumpPressed: false };
+    let obstacles = [];
+    let spawnTimer = 0;
+    let score = 0;
+    let best = Number(localStorage.getItem("best_score") || 0);
+    let gameOver = false;
+    let lastTime = performance.now();
+
+    function resetGame() {
+      player.x = WIDTH / 2 - player.w / 2;
+      player.y = GROUND_Y - player.h;
+      player.vx = 0;
+      player.vy = 0;
+      player.onGround = true;
+      obstacles = [];
+      spawnTimer = 0;
+      score = 0;
+      gameOver = false;
+    }
+
+    function spawnObstacle(speedMult) {
+      const w = Math.floor(34 + Math.random() * 34);
+      const h = Math.floor(24 + Math.random() * 14);
+      const x = Math.floor(Math.random() * (WIDTH - w));
+      const vy = (3.8 + Math.random() * 3.4) * speedMult;
+      obstacles.push({ x, y: -h, w, h, vy });
+    }
+
+    function rectsOverlap(a, b) {
+      return (
+        a.x < b.x + b.w &&
+        a.x + a.w > b.x &&
+        a.y < b.y + b.h &&
+        a.y + a.h > b.y
+      );
+    }
+
+    function update(dtMs) {
+      if (gameOver) {
+        if (input.jumpPressed) {
+          input.jumpPressed = false;
+          resetGame();
+        }
+        return;
+      }
+
+      player.vx = 0;
+      if (input.left) player.vx = -player.speed;
+      if (input.right) player.vx = player.speed;
+
+      if (input.jumpPressed && player.onGround) {
+        player.vy = player.jumpForce;
+        player.onGround = false;
+      }
+      input.jumpPressed = false;
+
+      player.vy += player.gravity;
+      player.x += player.vx;
+      player.y += player.vy;
+
+      player.x = Math.max(0, Math.min(WIDTH - player.w, player.x));
+
+      if (player.y + player.h >= GROUND_Y) {
+        player.y = GROUND_Y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      }
+
+      const speedMult = 1 + Math.min(score * 0.025, 2.2);
+      spawnTimer += dtMs;
+      const interval = Math.max(320, Math.floor(880 / speedMult));
+      if (spawnTimer >= interval) {
+        spawnTimer = 0;
+        spawnObstacle(speedMult);
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.y += obs.vy;
+
+        if (rectsOverlap(player, obs)) {
+          gameOver = true;
+          if (score > best) {
+            best = score;
+            localStorage.setItem("best_score", String(best));
+          }
+          break;
+        }
+
+        if (obs.y > HEIGHT) {
+          obstacles.splice(i, 1);
+          score += 1;
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+      // Yer
+      ctx.fillStyle = "#3c465f";
+      ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
+
+      // O'yinchi
+      ctx.fillStyle = "#00d28c";
+      ctx.beginPath();
+      ctx.roundRect(player.x, player.y, player.w, player.h, 8);
+      ctx.fill();
+
+      // To'siqlar
+      ctx.fillStyle = "#f04b5f";
+      for (const obs of obstacles) {
+        ctx.beginPath();
+        ctx.roundRect(obs.x, obs.y, obs.w, obs.h, 6);
+        ctx.fill();
+      }
+
+      // Ball
+      ctx.fillStyle = "#f5f5f5";
+      ctx.font = "bold 22px system-ui, sans-serif";
+      ctx.fillText(`Ball: ${score}   Rekord: ${best}`, 16, 34);
+
+      if (gameOver) {
+        ctx.fillStyle = "rgba(10, 14, 24, 0.72)";
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 30px system-ui, sans-serif";
+        ctx.fillText("Yutqazdingiz!", WIDTH / 2, HEIGHT / 2 - 20);
+
+        ctx.font = "20px system-ui, sans-serif";
+        ctx.fillText("Qayta boshlash: SAKRASH yoki R", WIDTH / 2, HEIGHT / 2 + 22);
+        ctx.textAlign = "left";
+      }
+    }
+
+    function loop(now) {
+      const dtMs = Math.min(50, now - lastTime);
+      lastTime = now;
+      update(dtMs);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // Klaviatura
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = true;
+      if (e.code === "ArrowRight" || e.code === "KeyD") input.right = true;
+      if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") {
+        e.preventDefault();
+        input.jumpPressed = true;
+      }
+      if (e.code === "KeyR" && gameOver) resetGame();
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = false;
+      if (e.code === "ArrowRight" || e.code === "KeyD") input.right = false;
+    });
+
+    // Sensorli tugmalar
+    function bindHold(el, key) {
+      el.addEventListener("pointerdown", (e) => { e.preventDefault(); input[key] = true; });
+      el.addEventListener("pointerup", () => { input[key] = false; });
+      el.addEventListener("pointerleave", () => { input[key] = false; });
+      el.addEventListener("pointercancel", () => { input[key] = false; });
+    }
+    bindHold(document.getElementById("btnLeft"), "left");
+    bindHold(document.getElementById("btnRight"), "right");
+
+    document.getElementById("btnJump").addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      input.jumpPressed = true;
+    });
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
